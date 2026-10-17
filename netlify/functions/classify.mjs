@@ -1,3 +1,4 @@
+
 const CATEGORIES = [
   "automatic subscription renewal",
   "free trial converting into a paid subscription",
@@ -14,11 +15,11 @@ export default async (request) => {
     );
   }
 
-  const token = process.env.HF_TOKEN;
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!token) {
+  if (!apiKey) {
     return Response.json(
-      { error: "The server is missing its HF_TOKEN configuration." },
+      { error: "The server is missing its GEMINI_API_KEY configuration." },
       { status: 500 }
     );
   }
@@ -34,7 +35,9 @@ export default async (request) => {
     );
   }
 
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const text = typeof body.text === "string"
+    ? body.text.trim()
+    : "";
 
   if (!text) {
     return Response.json(
@@ -51,19 +54,53 @@ export default async (request) => {
   }
 
   try {
+    const prompt = `
+You are SubSentry, a tool that analyzes e-commerce subscription wording.
+
+Classify the following text into these five categories:
+${CATEGORIES.map((category, i) => `${i + 1}. ${category}`).join("\n")}
+
+Analyze the actual wording. Do not assume a dark pattern exists
+without evidence. A clear disclosure may still describe an automatic
+renewal, so classify the concepts present in the text.
+
+Return ONLY a JSON object in this exact format:
+{
+  "results": [
+    {"label": "automatic subscription renewal", "score": 0.0},
+    {"label": "free trial converting into a paid subscription", "score": 0.0},
+    {"label": "hidden or unclear fees", "score": 0.0},
+    {"label": "difficult cancellation policy", "score": 0.0},
+    {"label": "clear subscription terms", "score": 0.0}
+  ]
+}
+
+Include every category exactly once. Each score must be between 0 and 1.
+Scores should reflect relative relevance and sum to 1.
+These are model-estimated relevance scores, not calibrated probabilities.
+
+Text to analyze:
+${JSON.stringify(text)}
+`;
+
     const upstream = await fetch(
-      "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          inputs: text,
-          parameters: {
-            candidate_labels: CATEGORIES,
-            multi_label: false
+          contents: [
+            {
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+            maxOutputTokens: 800
           }
         })
       }
@@ -82,74 +119,105 @@ export default async (request) => {
     }
 
     if (!upstream.ok) {
-      console.error("Hugging Face response:", upstream.status, data);
+      console.error("Gemini response status:", upstream.status);
+
+      if (upstream.status === 400) {
+        return Response.json(
+          { error: "Gemini rejected the request. Check the model and request configuration." },
+          { status: 502 }
+        );
+      }
 
       if (upstream.status === 401 || upstream.status === 403) {
         return Response.json(
-          { error: "The AI token is invalid or lacks inference permission." },
+          { error: "The Gemini API key is invalid or does not have access." },
           { status: 502 }
         );
       }
 
       if (upstream.status === 429) {
         return Response.json(
-          { error: "The AI service is rate-limiting requests. Try again later." },
-          { status: 503 }
-        );
-      }
-
-      if (upstream.status === 503) {
-        return Response.json(
-          { error: "The model may be loading or temporarily unavailable. Try again shortly." },
-          { status: 503 }
-        );
-      }
-
-      if (upstream.status === 402) {
-        return Response.json(
-          { error: "Inference credits or billing access may be exhausted. Check your Hugging Face account." },
+          { error: "Gemini's request limit was reached. Try again later." },
           { status: 503 }
         );
       }
 
       return Response.json(
-        { error: `The AI service failed (status ${upstream.status}). Check the deployment logs.` },
+        { error: `Gemini request failed (status ${upstream.status}). Check the deployment logs.` },
         { status: 502 }
       );
     }
 
-    // Support both the pipeline-style response and label/score arrays.
-    let labels;
-    let scores;
+    const outputText =
+      data.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || "")
+        .join("")
+        .trim();
 
-    if (Array.isArray(data) && data.length > 0 &&
-        data[0].labels && data[0].scores) {
-      labels = data[0].labels;
-      scores = data[0].scores;
-    } else if (data.labels && data.scores) {
-      labels = data.labels;
-      scores = data.scores;
-    } else if (Array.isArray(data) &&
-               data.every(item => item.label && Number.isFinite(item.score))) {
-      const sorted = [...data].sort((a, b) => b.score - a.score);
+    if (!outputText) {
+      console.error(
+        "Gemini returned no text. Finish reason:",
+        data.candidates?.[0]?.finishReason
+      );
 
-      return Response.json({
-        results: sorted.map(item => ({
-          label: item.label,
-          score: item.score
-        }))
-      });
-    } else {
-      console.error("Unexpected model response:", data);
       return Response.json(
-        { error: "The AI response did not contain recognizable labels and scores." },
+        { error: "Gemini did not return an analysis. Please try again." },
         { status: 502 }
       );
     }
 
-    const results = labels.map((label, index) => ({
+    let parsed;
+
+    try {
+      parsed = JSON.parse(outputText);
+    } catch {
+      console.error("Gemini returned invalid JSON.");
+      return Response.json(
+        { error: "The AI returned an unexpected format. Please try again." },
+        { status: 502 }
+      );
+    }
+
+    if (!Array.isArray(parsed.results) ||
+        parsed.results.length !== CATEGORIES.length) {
+      return Response.json(
+        { error: "The AI response did not contain all five categories." },
+        { status: 502 }
+      );
+    }
+
+    const scoresByLabel = new Map();
+
+    for (const item of parsed.results) {
+      if (
+        !CATEGORIES.includes(item.label) ||
+        !Number.isFinite(item.score) ||
+        item.score < 0 ||
+        item.score > 1 ||
+        scoresByLabel.has(item.label)
+      ) {
+        return Response.json(
+          { error: "The AI returned invalid category scores." },
+          { status: 502 }
+        );
+      }
+
+      scoresByLabel.set(item.label, item.score);
+    }
+
+    const total = [...scoresByLabel.values()]
+      .reduce((sum, score) => sum + score, 0);
+
+    if (total <= 0) {
+      return Response.json(
+        { error: "The AI returned unusable scores. Please try again." },
+        { status: 502 }
+      );
+    }
+
+    const results = CATEGORIES.map(label => ({
       label,
-      score: scores[index]
+      score: scoresByLabel.get(label) / total
     })).sort((a, b) => b.score - a.score);
 
     return Response.json({ results });
@@ -157,8 +225,10 @@ export default async (request) => {
     console.error("Classification request failed:", error);
 
     return Response.json(
-      { error: "Could not connect to the AI service. Check the logs and try again." },
+      { error: "Could not connect to Gemini. Please try again." },
       { status: 502 }
     );
   }
 };
+
+  
