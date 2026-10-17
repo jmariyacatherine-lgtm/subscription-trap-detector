@@ -129,4 +129,4 @@ calculateCostButton.addEventListener("click", () => {
     (trialDays > 0
       ? `The free trial lasts ${trialDays} days before the potential paid period begins.`
       : "No free trial is included.");
-});
+}); 
