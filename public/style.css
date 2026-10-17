@@ -223,3 +223,53 @@ footer {
     font-size: 12px;
   }
 }
+
+/* Subscription Cost Calculator */
+.calculator h2 {
+  margin-top: 0;
+}
+
+.calculator-fields {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.calculator-fields label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.calculator-fields input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+}
+
+.calculator-fields input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.calculator-result {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--ink);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.calculator-disclaimer {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
