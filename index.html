@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+        content="Analyze subscription terms for potential dark patterns using AI.">
+  <title>SubSentry | Subscription Text Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Sub<span>Sentry</span></a>
+    <span class="tag">AI TEXT ANALYZER</span>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">SUBSCRIPTION TRANSPARENCY</p>
+      <h1>Read the fine print.<br><span>Understand the terms.</span></h1>
+      <p class="intro">
+        Paste subscription text to identify potentially concerning
+        billing and cancellation patterns.
+      </p>
+    </section>
+
+    <section class="panel">
+      <label for="subscriptionText">Subscription terms or email</label>
+      <textarea id="subscriptionText" maxlength="5000"
+        placeholder="Example: Your 7-day free trial will automatically renew at ₹999 per month unless cancelled before it ends."></textarea>
+
+      <div class="input-footer">
+        <span id="charCount">0 / 5000 characters</span>
+        <button id="scanButton" type="button">Analyze text →</button>
+      </div>
+
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="results" class="panel results" hidden>
+      <p class="eyebrow">ANALYSIS RESULTS</p>
+      <h2>Category comparison</h2>
+      <p class="muted">
+        These scores show how the model ranks the supplied categories.
+        They are not probabilities of fraud.
+      </p>
+      <div id="resultList"></div>
+    </section>
+
+    <section class="note">
+      <strong>Important limitation</strong>
+      <p>
+        This is an experimental AI tool, not a legal or fraud detector.
+        Results can be incorrect. A high score does not prove that a
+        business uses a deceptive practice.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>SubSentry · Academic mini-project · AI-assisted text analysis</p>
+  </footer>
+</body>
+</html>
