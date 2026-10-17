@@ -97,3 +97,36 @@ function displayResults(results) {
     resultList.appendChild(row);
   });
 }
+
+const monthlyPriceInput = document.getElementById("monthlyPrice");
+const trialDaysInput = document.getElementById("trialDays");
+const calculateCostButton = document.getElementById("calculateCostButton");
+const calculatorResult = document.getElementById("calculatorResult");
+
+calculateCostButton.addEventListener("click", () => {
+  const monthlyPrice = Number(monthlyPriceInput.value);
+  const trialDays = Number(trialDaysInput.value);
+
+  if (
+    monthlyPriceInput.value.trim() === "" ||
+    trialDaysInput.value.trim() === "" ||
+    !Number.isFinite(monthlyPrice) ||
+    !Number.isInteger(trialDays) ||
+    monthlyPrice < 0 ||
+    trialDays < 0 ||
+    trialDays > 365
+  ) {
+    calculatorResult.textContent =
+      "Enter a valid monthly price and a trial duration from 0 to 365 days.";
+    return;
+  }
+
+  const yearlyCost = monthlyPrice * 12;
+
+  calculatorResult.textContent =
+    `Monthly cost: ₹${monthlyPrice.toFixed(2)}. ` +
+    `Cost for 12 paid months: ₹${yearlyCost.toFixed(2)}. ` +
+    (trialDays > 0
+      ? `The free trial lasts ${trialDays} days before the potential paid period begins.`
+      : "No free trial is included.");
+});
