@@ -47,6 +47,53 @@
       </p>
       <div id="resultList"></div>
     </section>
+    
+<section class="panel calculator" aria-labelledby="calculatorTitle">
+  <h2 id="calculatorTitle">Subscription Cost Calculator</h2>
+  <p>
+    Estimate how much a subscription could cost over time.
+  </p>
+
+  <div class="calculator-fields">
+    <label for="monthlyPrice">Monthly subscription price (₹)</label>
+    <input
+      id="monthlyPrice"
+      type="number"
+      min="0"
+      step="0.01"
+      placeholder="e.g. 499"
+    />
+
+    <label for="trialDays">Free trial duration (days)</label>
+    <input
+      id="trialDays"
+      type="number"
+      min="0"
+      max="365"
+      step="1"
+      value="7"
+    />
+
+    <button id="calculateCostButton" type="button">
+      Calculate Cost
+    </button>
+  </div>
+
+  <div
+    id="calculatorResult"
+    class="calculator-result"
+    role="status"
+    aria-live="polite"
+  >
+    Enter the subscription details to see the estimated cost.
+  </div>
+
+  <p class="calculator-disclaimer">
+    Estimates assume the monthly price stays the same.
+    Taxes, discounts, and other fees are not included.
+  </p>
+</section>
+
 
     <section class="note">
       <strong>Important limitation</strong>
