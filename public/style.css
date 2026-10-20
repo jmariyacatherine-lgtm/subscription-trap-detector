@@ -1,15 +1,18 @@
+
 :root {
-  --ink: #18212f;
-  --muted: #657184;
-  --paper: #f5f7fb;
+  --ink: #30131d;
+  --muted: #806775;
+  --paper: #fff7f9;
   --white: #ffffff;
-  --line: #e0e6ef;
-  --accent: #5846d8;
-  --accent-light: #eeeaff;
+  --line: #f1d5de;
+  --accent: #b5122b;
+  --accent-light: #fff1f4;
+  --accent-pink: #ef476f;
+  --blush: #ffb3c7;
 }
 
 * {
-  box-sizing: border-box; 
+  box-sizing: border-box;
 }
 
 body {
@@ -40,7 +43,8 @@ body {
   color: var(--accent);
 }
 
-.tag, .eyebrow {
+.tag,
+.eyebrow {
   color: var(--accent);
   font-size: 11px;
   font-weight: 800;
@@ -64,10 +68,11 @@ body {
 }
 
 .hero h1 span {
-  color: var(--accent);
+  color: var(--accent-pink);
 }
 
-.intro, .muted {
+.intro,
+.muted {
   color: var(--muted);
 }
 
@@ -76,7 +81,7 @@ body {
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 18px;
-  box-shadow: 0 8px 28px rgba(20, 35, 70, 0.04);
+  box-shadow: 0 8px 28px rgba(181, 18, 43, 0.07);
 }
 
 label {
@@ -90,14 +95,16 @@ textarea {
   min-height: 180px;
   padding: 15px;
   resize: vertical;
-  border: 1px solid #cfd7e5;
+  border: 1px solid #e5bdca;
   border-radius: 10px;
   font: inherit;
   color: var(--ink);
+  background: #fffdfd;
 }
 
 textarea:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-pink);
+  outline-offset: 2px;
   border-color: transparent;
 }
 
@@ -117,12 +124,26 @@ textarea:focus {
 button {
   padding: 12px 19px;
   background: var(--accent);
-  color: white;
+  color: #ffffff;
   border: none;
   border-radius: 9px;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  background: #8f0e24;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:focus-visible {
+  outline: 3px solid var(--accent-pink);
+  outline-offset: 3px;
 }
 
 button:disabled {
@@ -159,13 +180,13 @@ button:disabled {
   height: 9px;
   margin-top: 8px;
   overflow: hidden;
-  background: #edf0f6;
+  background: #f8e5eb;
   border-radius: 20px;
 }
 
 .bar {
   height: 100%;
-  background: var(--accent);
+  background: var(--accent-pink);
   border-radius: 20px;
 }
 
@@ -191,6 +212,56 @@ footer {
 
 [hidden] {
   display: none !important;
+}
+
+/* Subscription Cost Calculator */
+.calculator h2 {
+  margin-top: 0;
+}
+
+.calculator-fields {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.calculator-fields label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.calculator-fields input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+}
+
+.calculator-fields input:focus {
+  outline: 2px solid var(--accent-pink);
+  outline-offset: 2px;
+}
+
+.calculator-result {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--ink);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.calculator-disclaimer {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 @media (max-width: 520px) {
@@ -222,54 +293,10 @@ footer {
   .result-heading {
     font-size: 12px;
   }
-}
 
-/* Subscription Cost Calculator */
-.calculator h2 {
-  margin-top: 0;
+  @media (prefers-reduced-motion: reduce) {
+    button {
+      transition: none;
+    }
+  }
 }
-
-.calculator-fields {
-  display: grid;
-  gap: 10px;
-  margin-top: 18px;
-}
-
-.calculator-fields label {
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.calculator-fields input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--white);
-  color: var(--ink);
-  font: inherit;
-}
-
-.calculator-fields input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.calculator-result {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--accent-light);
-  color: var(--ink);
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-
-.calculator-disclaimer {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.5;
-}
-
