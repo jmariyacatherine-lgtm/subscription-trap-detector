@@ -7,6 +7,8 @@ const CATEGORIES = [
   "clear subscription terms"
 ];
 
+const GEMINI_TIMEOUT_MS = 22000;
+
 export default async (request) => {
   if (request.method !== "POST") {
     return Response.json(
@@ -18,6 +20,8 @@ export default async (request) => {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
+    console.error("GEMINI_API_KEY is not configured.");
+
     return Response.json(
       { error: "The server is missing its GEMINI_API_KEY configuration." },
       { status: 500 }
@@ -83,35 +87,58 @@ Text to analyze:
 ${JSON.stringify(text)}
 `;
 
-    const upstream = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
-            maxOutputTokens: 800
-          }
-        })
-      }
+    const controller = new AbortController();
+
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      GEMINI_TIMEOUT_MS
     );
 
+    let upstream;
+
+    try {
+      upstream = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.1,
+              maxOutputTokens: 800,
+              thinkingConfig: {
+                thinkingLevel: "low"
+              }
+            }
+          }),
+          signal: controller.signal
+        }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     const raw = await upstream.text();
+
     let data;
 
     try {
       data = JSON.parse(raw);
     } catch {
+      console.error(
+        "Gemini returned a non-JSON response. HTTP status:",
+        upstream.status
+      );
+
       return Response.json(
         { error: "The AI service returned an unreadable response." },
         { status: 502 }
@@ -119,7 +146,12 @@ ${JSON.stringify(text)}
     }
 
     if (!upstream.ok) {
-      console.error("Gemini response status:", upstream.status);
+      console.error(
+        "Gemini response status:",
+        upstream.status,
+        "Message:",
+        data.error?.message || "No error details provided."
+      );
 
       if (upstream.status === 400) {
         return Response.json(
@@ -148,11 +180,10 @@ ${JSON.stringify(text)}
       );
     }
 
-    const outputText =
-      data.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("")
-        .trim();
+    const outputText = data.candidates?.[0]?.content?.parts
+      ?.map(part => part.text || "")
+      .join("")
+      .trim();
 
     if (!outputText) {
       console.error(
@@ -172,14 +203,17 @@ ${JSON.stringify(text)}
       parsed = JSON.parse(outputText);
     } catch {
       console.error("Gemini returned invalid JSON.");
+
       return Response.json(
         { error: "The AI returned an unexpected format. Please try again." },
         { status: 502 }
       );
     }
 
-    if (!Array.isArray(parsed.results) ||
-        parsed.results.length !== CATEGORIES.length) {
+    if (
+      !Array.isArray(parsed.results) ||
+      parsed.results.length !== CATEGORIES.length
+    ) {
       return Response.json(
         { error: "The AI response did not contain all five categories." },
         { status: 502 }
@@ -190,6 +224,7 @@ ${JSON.stringify(text)}
 
     for (const item of parsed.results) {
       if (
+        !item ||
         !CATEGORIES.includes(item.label) ||
         !Number.isFinite(item.score) ||
         item.score < 0 ||
@@ -221,8 +256,28 @@ ${JSON.stringify(text)}
     })).sort((a, b) => b.score - a.score);
 
     return Response.json({ results });
+
   } catch (error) {
-    console.error("Classification request failed:", error);
+    if (
+      error?.name === "AbortError" ||
+      error?.name === "TimeoutError"
+    ) {
+      console.error(
+        `Gemini request timed out after ${GEMINI_TIMEOUT_MS} ms.`
+      );
+
+      return Response.json(
+        {
+          error: "Gemini took too long to respond. Please try again."
+        },
+        { status: 504 }
+      );
+    }
+
+    console.error(
+      "Classification request failed:",
+      error?.message || "Unknown error"
+    );
 
     return Response.json(
       { error: "Could not connect to Gemini. Please try again." },
@@ -230,5 +285,3 @@ ${JSON.stringify(text)}
     );
   }
 };
-
-  
