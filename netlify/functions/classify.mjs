@@ -7,24 +7,82 @@ const CATEGORIES = [
   "clear subscription terms"
 ];
 
-const GEMINI_TIMEOUT_MS = 22000;
+const GEMINI_TIMEOUT_MS = 18000;
+const MODEL = "gemini-3.8-flash";
+
+function fallbackAnalysis(text) {
+  const value = text.toLowerCase();
+
+  const keywords = {
+    "automatic subscription renewal": [
+      "automatically renew", "auto-renew", "auto renew",
+      "recurring billing", "subscription renews",
+      "renews every", "charged monthly", "billed monthly",
+      "billed annually", "subscription continues"
+    ],
+    "free trial converting into a paid subscription": [
+      "free trial", "trial period", "trial ends",
+      "after the trial", "after 7 days", "after 14 days",
+      "converts to paid", "convert to paid",
+      "paid subscription", "trial expires"
+    ],
+    "hidden or unclear fees": [
+      "hidden fee", "additional fees", "extra charges",
+      "processing fee", "service fee", "fees may apply",
+      "at checkout", "not included", "unclear fees",
+      "additional charges", "small print"
+    ],
+    "difficult cancellation policy": [
+      "call to cancel", "cancel by phone", "contact support",
+      "cancellation policy", "difficult to cancel",
+      "cannot cancel online", "can't cancel online",
+      "cancellation fee", "no cancellation"
+    ],
+    "clear subscription terms": [
+      "terms and conditions", "cancel anytime",
+      "cancel at any time", "monthly price",
+      "annual price", "billing date", "clearly stated",
+      "no hidden fees", "price will be", "unless cancelled"
+    ]
+  };
+
+  const scores = CATEGORIES.map(label => {
+    const matches = keywords[label].filter(word =>
+      value.includes(word)
+    ).length;
+
+    return {
+      label,
+      score: 0.1 + matches
+    };
+  });
+
+  const total = scores.reduce((sum, item) => sum + item.score, 0);
+
+  return scores
+    .map(item => ({
+      label: item.label,
+      score: item.score / total
+    }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function backupResponse(text, reason) {
+  console.warn("Using SubSentry keyword-based backup:", reason);
+
+  return Response.json({
+    results: fallbackAnalysis(text),
+    fallback: true,
+    warning:
+      "Gemini was unavailable. These are keyword-based estimates, not AI-generated analysis."
+  });
+}
 
 export default async (request) => {
   if (request.method !== "POST") {
     return Response.json(
       { error: "Use a POST request to analyze text." },
       { status: 405 }
-    );
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    console.error("GEMINI_API_KEY is not configured.");
-
-    return Response.json(
-      { error: "The server is missing its GEMINI_API_KEY configuration." },
-      { status: 500 }
     );
   }
 
@@ -57,18 +115,20 @@ export default async (request) => {
     );
   }
 
-  try {
-    const prompt = `
-You are SubSentry, a tool that analyzes e-commerce subscription wording.
+  const apiKey = process.env.GEMINI_API_KEY;
 
-Classify the following text into these five categories:
+  if (!apiKey) {
+    console.error("GEMINI_API_KEY is not configured.");
+    return backupResponse(text, "API key is not configured");
+  }
+
+  const prompt = `
+You are SubSentry, a subscription wording analysis tool.
+
+Analyze the supplied text for these five concepts:
 ${CATEGORIES.map((category, i) => `${i + 1}. ${category}`).join("\n")}
 
-Analyze the actual wording. Do not assume a dark pattern exists
-without evidence. A clear disclosure may still describe an automatic
-renewal, so classify the concepts present in the text.
-
-Return ONLY a JSON object in this exact format:
+Return only JSON in this format:
 {
   "results": [
     {"label": "automatic subscription renewal", "score": 0.0},
@@ -79,26 +139,27 @@ Return ONLY a JSON object in this exact format:
   ]
 }
 
-Include every category exactly once. Each score must be between 0 and 1.
-Scores should reflect relative relevance and sum to 1.
-These are model-estimated relevance scores, not calibrated probabilities.
+Include every category exactly once. Scores must be non-negative,
+at most 1, and sum to 1. Scores are relative relevance estimates,
+not calibrated probabilities. Do not assume wrongdoing without evidence.
 
 Text to analyze:
 ${JSON.stringify(text)}
 `;
 
-    const controller = new AbortController();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    GEMINI_TIMEOUT_MS
+  );
 
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      GEMINI_TIMEOUT_MS
-    );
-
+  try {
     let upstream;
+    let raw;
 
     try {
       upstream = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
         {
           method: "POST",
           headers: {
@@ -106,78 +167,67 @@ ${JSON.stringify(text)}
             "x-goog-api-key": apiKey
           },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }]
-              }
-            ],
+            contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               responseMimeType: "application/json",
               temperature: 0.1,
-              maxOutputTokens: 800,
-              thinkingConfig: {
-                thinkingLevel: "low"
-              }
+              maxOutputTokens: 400,
+              thinkingConfig: { thinkingLevel: "low" }
             }
           }),
           signal: controller.signal
         }
       );
-    } finally {
-      clearTimeout(timeoutId);
+
+      raw = await upstream.text();
+    } catch (error) {
+      if (
+        error?.name === "AbortError" ||
+        error?.name === "TimeoutError"
+      ) {
+        return backupResponse(text, "Gemini request timed out");
+      }
+
+      console.error("Gemini connection failed:", error?.message);
+      return backupResponse(text, "Could not connect to Gemini");
     }
 
-    const raw = await upstream.text();
+    if (upstream.status === 503 || upstream.status === 429) {
+      return backupResponse(text, `Gemini returned ${upstream.status}`);
+    }
 
     let data;
 
     try {
       data = JSON.parse(raw);
     } catch {
-      console.error(
-        "Gemini returned a non-JSON response. HTTP status:",
-        upstream.status
-      );
-
-      return Response.json(
-        { error: "The AI service returned an unreadable response." },
-        { status: 502 }
-      );
+      console.error("Gemini returned a non-JSON response.");
+      return backupResponse(text, "Gemini returned unreadable data");
     }
 
     if (!upstream.ok) {
       console.error(
-        "Gemini response status:",
+        "Gemini status:",
         upstream.status,
         "Message:",
-        data.error?.message || "No error details provided."
+        data.error?.message || "No details"
       );
-
-      if (upstream.status === 400) {
-        return Response.json(
-          { error: "Gemini rejected the request. Check the model and request configuration." },
-          { status: 502 }
-        );
-      }
 
       if (upstream.status === 401 || upstream.status === 403) {
         return Response.json(
-          { error: "The Gemini API key is invalid or does not have access." },
+          { error: "The Gemini API key is invalid or lacks access." },
           { status: 502 }
         );
       }
 
-      if (upstream.status === 429) {
+      if (upstream.status === 400) {
         return Response.json(
-          { error: "Gemini's request limit was reached. Try again later." },
-          { status: 503 }
+          { error: "Gemini rejected the request configuration." },
+          { status: 502 }
         );
       }
 
-      return Response.json(
-        { error: `Gemini request failed (status ${upstream.status}). Check the deployment logs.` },
-        { status: 502 }
-      );
+      return backupResponse(text, `Gemini returned ${upstream.status}`);
     }
 
     const outputText = data.candidates?.[0]?.content?.parts
@@ -185,39 +235,19 @@ ${JSON.stringify(text)}
       .join("")
       .trim();
 
-    if (!outputText) {
-      console.error(
-        "Gemini returned no text. Finish reason:",
-        data.candidates?.[0]?.finishReason
-      );
-
-      return Response.json(
-        { error: "Gemini did not return an analysis. Please try again." },
-        { status: 502 }
-      );
-    }
-
     let parsed;
 
     try {
-      parsed = JSON.parse(outputText);
+      parsed = JSON.parse(outputText || "");
     } catch {
-      console.error("Gemini returned invalid JSON.");
-
-      return Response.json(
-        { error: "The AI returned an unexpected format. Please try again." },
-        { status: 502 }
-      );
+      return backupResponse(text, "Gemini returned invalid JSON");
     }
 
     if (
       !Array.isArray(parsed.results) ||
       parsed.results.length !== CATEGORIES.length
     ) {
-      return Response.json(
-        { error: "The AI response did not contain all five categories." },
-        { status: 502 }
-      );
+      return backupResponse(text, "Gemini returned incomplete results");
     }
 
     const scoresByLabel = new Map();
@@ -231,10 +261,7 @@ ${JSON.stringify(text)}
         item.score > 1 ||
         scoresByLabel.has(item.label)
       ) {
-        return Response.json(
-          { error: "The AI returned invalid category scores." },
-          { status: 502 }
-        );
+        return backupResponse(text, "Gemini returned invalid scores");
       }
 
       scoresByLabel.set(item.label, item.score);
@@ -244,44 +271,25 @@ ${JSON.stringify(text)}
       .reduce((sum, score) => sum + score, 0);
 
     if (total <= 0) {
-      return Response.json(
-        { error: "The AI returned unusable scores. Please try again." },
-        { status: 502 }
-      );
+      return backupResponse(text, "Gemini returned unusable scores");
     }
 
-    const results = CATEGORIES.map(label => ({
-      label,
-      score: scoresByLabel.get(label) / total
-    })).sort((a, b) => b.score - a.score);
+    const results = CATEGORIES
+      .map(label => ({
+        label,
+        score: scoresByLabel.get(label) / total
+      }))
+      .sort((a, b) => b.score - a.score);
 
-    return Response.json({ results });
+    return Response.json({
+      results,
+      fallback: false
+    });
 
   } catch (error) {
-    if (
-      error?.name === "AbortError" ||
-      error?.name === "TimeoutError"
-    ) {
-      console.error(
-        `Gemini request timed out after ${GEMINI_TIMEOUT_MS} ms.`
-      );
-
-      return Response.json(
-        {
-          error: "Gemini took too long to respond. Please try again."
-        },
-        { status: 504 }
-      );
-    }
-
-    console.error(
-      "Classification request failed:",
-      error?.message || "Unknown error"
-    );
-
-    return Response.json(
-      { error: "Could not connect to Gemini. Please try again." },
-      { status: 502 }
-    );
+    console.error("Classification failed:", error?.message);
+    return backupResponse(text, "Unexpected analysis error");
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
